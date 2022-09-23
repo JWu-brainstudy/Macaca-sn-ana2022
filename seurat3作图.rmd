@@ -1,0 +1,210 @@
+#1.加载包
+```{r message=FALSE, warning=FALSE}
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+library(ggsci)
+```
+
+#2. 加载数据
+```{r}
+data <- readRDS("GraphClust.seuset.rds")
+```
+
+
+#3. 提取celltype注释，整合到指定位置
+```{r}
+#以防出错，先导入，在整合至新表，在将新表cbind过去
+# celltype.anno <- read.delim("CellType.txt")
+# colnames(celltype.anno)[1] = "seurat_clusters"
+# c <- left_join(data@meta.data, celltype.anno)
+
+# data@meta.data <- cbind(data@meta.data, c[,7])
+# colnames(data@meta.data) [7] <- "Cell type"
+```
+
+#4. 按cluster绘图并着色
+```{r}
+library(tidyverse)
+umap1 = data@reductions$umap@cell.embeddings %>%
+      as.data.frame() %>% cbind(tx = data@meta.data$seurat_clusters)
+
+#颜色梯度
+colourCount = length(unique(umap1$tx))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+## 用 ggplot 绘图
+ggplot(umap1, aes(x = UMAP_1, y = UMAP_2, color = tx), pt.size=0.5) + 
+  geom_point(size = 0.2, alpha = 0.6) + 
+  scale_color_manual(values = getPalette(colourCount))+
+  theme_void()
+# ggsave(file = "umap.by_cluster.pdf", width = 20, height = 20)
+# ggsave(file = "umap.by_cluster.png", width = 15, height = 15, units = "in", dpi = 300)
+```
+#5. 按celltype绘图并着色
+```{r}
+celltype.anno <- read.delim("CellType.txt")
+colnames(celltype.anno)[1] = "seurat_clusters"
+celltype.anno$seurat_clusters <- as.factor(celltype.anno$seurat_clusters)
+c <- data@meta.data %>%
+  as.data.frame()%>%
+  left_join(celltype.anno)
+head(c,3)
+
+umap2 = data@reductions$umap@cell.embeddings %>%
+      as.data.frame() %>% cbind(tx = c$`Celltype`)
+
+#颜色梯度
+colourCount = length(unique(umap2$tx))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+
+## 用 ggplot 绘图
+ggplot(umap2, aes(x = UMAP_1, y = UMAP_2, color = tx)) + 
+  geom_point(size = 0.2, alpha = 0.6) + 
+  scale_color_manual(values = getPalette(colourCount))+
+  theme_void()
+# ggsave(file = "umap.by_celltype.pdf", width = 20, height = 20)
+# ggsave(file = "umap.by_celltype.png", width = 15, height = 15, units = "in", dpi = 300)
+```
+#6. 按组染色
+```{r}
+library(tidyverse)
+
+#substring-截取字符
+umap3 = data@reductions$umap@cell.embeddings %>% 
+  as.data.frame() %>% cbind(tx = data@meta.data$orig.ident) %>% 
+  mutate(group = substring(tx,1,2))
+
+## 用 ggplot 绘图
+p <- ggplot(umap3, aes(x = UMAP_1, y = UMAP_2, color = group), pt.size=0.5) + 
+  geom_point(size = 0.2, alpha = 0.6) + 
+  scale_color_npg()+
+  theme_void()
+
+# ggsave(file = "umap.by_group.pdf", width = 20, height = 20)
+ggsave(file = "umap.by_group.png", width = 20, height = 20, units = "in", dpi = 300)
+
+p4 <- p + facet_wrap( ~ group)
+# ggsave(file = "umap.by_each_group.pdf", p4, width = 20, height = 6.5)
+ggsave(file = "umap.by_each_group.png", p4, width = 30, height = 10, units = "in", dpi = 300)
+```
+
+#6.1 老方法的3个组分别染色
+```{r}
+#3个组分别染色
+library(gridExtra)
+p1 <- ggplot(umap3 %>% filter(group=="De"), aes(x = UMAP_1, y = UMAP_2, color = group), pt.size=0.5) + 
+  geom_point(size = 0.2, alpha = 0.6) + scale_color_manual(values = "#E41A1C")+
+  theme_void()
+
+p2 <- ggplot(umap3 %>% filter(group=="HC"), aes(x = UMAP_1, y = UMAP_2, color = group), pt.size=0.5) + 
+  geom_point(size = 0.2, alpha = 0.6) + scale_color_manual(values = "#377EB8")+
+  theme_void()
+
+p3 <- ggplot(umap3 %>% filter(group=="Re"), aes(x = UMAP_1, y = UMAP_2, color = group), pt.size=0.5) + 
+  geom_point(size = 0.2, alpha = 0.6) + scale_color_manual(values = "#4DAF4A")+
+  theme_void()
+
+p4 <- grid.arrange(p1, p2, p3, nrow=2, ncol =2)
+#multiplot(p1, p2, p3, cols = 2)
+
+ggsave(file = "umap.by_each_group.pdf", p4, width = 20, height = 20)
+ggsave(file = "umap.by_each_group.png", p4, width = 15, height = 15, units = "in", dpi = 300)
+```
+
+
+
+#6. 寻找经典的marker基因，染色
+```{r}
+cellmarkers <- read.delim("filtered cell markers.txt", quote= "") $markers %>% as.character()
+FeaturePlot(data, features = cellmarkers, pt.size = 0.5, reduction = "umap")
+ggsave(file = "umap.cell.markers.pdf", width = 30, height = 60, limitsize = FALSE)
+```
+
+
+
+#7. cluster marker heatmap
+```{r}
+#加载cluster marker
+memory.limit(1000000)
+clus.marker <- read.delim("GraphClust.AllMarkerGenes.txt") %>%
+  group_by(cluster) %>%
+  top_n(n = 10, wt = avg_logFC)
+
+pdf(file = "heatmap cluster.pdf", width = 9, height = 9)
+#png(file = "heatmap cluster.png", width = 15, height = 15, units = "in", res = 300)
+DoHeatmap(data, features = clus.marker$allmarkers.gene)+ NoLegend()
+dev.off()
+```
+
+#8. cell marker heatmap
+```{r}
+#调整热图顺序
+memory.limit(1000000)
+my_levels <- read.delim("culs level.txt", quote= "") $order %>% as.character()
+cellmarkers <- read.delim("filtered cell markers.txt", quote= "") $markers %>% as.character()
+Idents(data) <- factor(Idents(data), levels= my_levels)
+
+#pdf(file = "heatmap cell.pdf", width = 16, height = 16)
+png(file = "heatmap cell1.png", width = 15, height = 8, units = "in", res = 300)
+DoHeatmap(data, features = cellmarkers, label = F,slot = "scale.data", draw.lines = F, size = 5.5, hjust = 0) 
+ggsave("heatmap cell1.pdf", device = "pdf", width = 23,height = 12, units = "cm" )
+dev.off()
+```
+
+20220321确认颜色
+```{r}
+#调整热图顺序
+
+memory.limit(1000000)
+my_levels <- read.delim("culs level.txt", quote= "") $order %>% as.character()
+cellmarkers <- read.delim("filtered cell markers - 副本.txt", quote= "") $markers %>% as.character()
+Idents(data) <- factor(Idents(data), levels= my_levels)
+
+white.to.grey <- brewer.pal(11,"RdGy")[6:11]
+blue.to.white <- brewer.pal(11,"RdBu")[7:11] %>% rev()
+blue.to.grey <- c(blue.to.white,white.to.grey)
+
+heatmapcolor.1 <- c(colorRampPalette(blue.to.grey[2:4])(4),colorRampPalette(blue.to.grey[5:7])(9),colorRampPalette(blue.to.grey[8:10])(4)) 
+
+DoHeatmap(data, features = cellmarkers, label = F, draw.lines = F, size = 5.5, hjust = 0)+
+  scale_fill_gradientn(colors = rev(heatmapcolor.1))
+ggsave("heatmap cell1.png", width = 25,height = 12 )
+```
+
+
+#9. marker gene violin
+```{r}
+png(file = "vln cluster.png", width = 7, height = 60, units = "in", res = 300)
+VlnPlot(data, features = cellmarkers, pt.size = 0, ncol = 1)+ 
+  scale_x_discrete("")+
+  theme(axis.text.x.bottom = element_blank())
+ggsave(file = "vln cluster.pdf", width = 7, height = 60, limitsize = FALSE)
+dev.off()
+```
+做出图来cluster顺序不好调，用ggplot重新做
+```{r}
+library(reshape2)
+
+cellmarkers = read.delim("filtered cell markers.txt", quote= "")
+vln.df=as.data.frame(data[["RNA"]]@data[markerdf2$gene,])
+```
+
+#10. bubbleplot cluster
+```{r}
+#bubble plot，由上往下看，顺序要反过来
+# my_levels <- read.delim("culs level bubble.txt", quote= "") $order %>% as.character()
+# Idents(data) <- factor(Idents(data), levels= my_levels)
+DotPlot(data, features = cellmarkers, cols = c("#FEE0D2", "#CB181D"), scale.min = 10) + 
+  scale_x_discrete("")+
+  scale_y_discrete("")+
+  RotatedAxis()
+ggsave(file = "Bub cluster.png", width = 10, height = 8, limitsize = FALSE)
+# ggsave(file = "Bub cluster.pdf", width = 10, height = 8, limitsize = FALSE)
+```
+
+
+ 
+
+
