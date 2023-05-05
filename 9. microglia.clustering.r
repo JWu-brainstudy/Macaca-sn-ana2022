@@ -183,7 +183,6 @@ ggsave(file = "./S3M/vln.56gene.filtered.pdf", width = 12, height = 10)
 
 
 # S03M vs. 小胶质DEG overlap基因 精神疾病注释
-```{r}
 library(psygenet2r)
 library(disgenet2r)
 disgenet_api_key <- get_disgenet_api_key(email = "470355362@qq.com",password = "******" )
@@ -195,14 +194,3 @@ plot(psy.anno.56)
 plot(psy.anno.56, 'GDCA network')
 plot(psy.anno.56, 'heatmapGenes')
 geneAttrPlot(psy.anno.56, type = "evidence index")
-```
-
-
-
-
-
-
-
-
-
-
